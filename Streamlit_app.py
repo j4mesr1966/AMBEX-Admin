@@ -104,7 +104,8 @@ if filtered.empty:
 else:
     # Show a compact list
     for idx, row in filtered.iterrows():
-        with st.expander(f"{row['surname']} {row['first_name']}  |  {row['status']}  |  {row.get('course_type', '')[:30]}..."):
+        course_label = str(row.get("course_type") or "")[:30]
+        with st.expander(f"{row.get('surname', '')} {row.get('first_name', '')}  |  {row.get('status', '')}  |  {course_label}"):
             
             col1, col2 = st.columns(2)
             with col1:
