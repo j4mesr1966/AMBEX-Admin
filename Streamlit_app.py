@@ -62,7 +62,7 @@ with tab_flights:
     fo_ret_no = st.text_input("Return flight number")
     fo_label = st.text_input("Label (optional)")
 
-     if st.button("Save flight option"):
+    if st.button("Save flight option"):
         try:
             supabase.table("flight_options").insert({
                 "outbound_date": fo_out.isoformat(),
@@ -77,6 +77,13 @@ with tab_flights:
         except Exception as e:
             st.error("Could not save flight option. Check that the flight_options table exists.")
             st.caption(str(e))
+
+    try:
+        flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
+    except Exception as e:
+        st.error("Could not load flight options. Check that the flight_options table exists and RLS allows select.")
+        st.caption(str(e))
+        flights = []
 
     try:
         flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
