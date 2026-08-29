@@ -6,8 +6,8 @@ from datetime import datetime
 # ==========================================
 # CONFIG – REPLACE THESE TWO VALUES
 # ==========================================
-SUPABASE_URL = "YOUR_SUPABASE_URL"
-SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY"   # Publishable key
+SUPABASE_URL = "https://bwhkccfwzsvjtsaqvhyy.supabase.co"
+SUPABASE_KEY = "sb_publishable_LdjLR-FIesLKwuqtQzHDpg_C-OIdGgg"   # Publishable key
 
 # ==========================================
 # PAGE SETUP
