@@ -90,7 +90,10 @@ with tab_flights:
     except Exception as e:
         st.error("Could not load flight options. Check that the flight_options table exists and RLS allows select.")
         st.caption(str(e))
-        flights = []    st.subheader("Existing options")
+        flights = []    
+        
+    st.subheader("Existing options")
+        
     if flights:
         view = pd.DataFrame(flights)
         for col in ["outbound_date", "return_date"]:
