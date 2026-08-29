@@ -62,7 +62,7 @@ with tab_flights:
     fo_ret_no = st.text_input("Return flight number")
     fo_label = st.text_input("Label (optional)")
 
-        if st.button("Save flight option"):
+     if st.button("Save flight option"):
         try:
             supabase.table("flight_options").insert({
                 "outbound_date": fo_out.isoformat(),
