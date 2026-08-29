@@ -62,20 +62,28 @@ with tab_flights:
     fo_ret_no = st.text_input("Return flight number")
     fo_label = st.text_input("Label (optional)")
 
-    if st.button("Save flight option"):
-        supabase.table("flight_options").insert({
-            "outbound_date": fo_out.isoformat(),
-            "outbound_flight_number": fo_out_no.strip() or None,
-            "return_date": fo_ret.isoformat(),
-            "return_flight_number": fo_ret_no.strip() or None,
-            "label": fo_label.strip() or None,
-            "is_active": True,
-        }).execute()
-        st.success("Flight option saved")
-        st.rerun()
+        if st.button("Save flight option"):
+        try:
+            supabase.table("flight_options").insert({
+                "outbound_date": fo_out.isoformat(),
+                "outbound_flight_number": fo_out_no.strip() or None,
+                "return_date": fo_ret.isoformat(),
+                "return_flight_number": fo_ret_no.strip() or None,
+                "label": fo_label.strip() or None,
+                "is_active": True,
+            }).execute()
+            st.success("Flight option saved")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not save flight option. Check that the flight_options table exists.")
+            st.caption(str(e))
 
-    flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
-    st.subheader("Existing options")
+    try:
+        flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
+    except Exception as e:
+        st.error("Could not load flight options. Check that the flight_options table exists and RLS allows select.")
+        st.caption(str(e))
+        flights = []    st.subheader("Existing options")
     if flights:
         view = pd.DataFrame(flights)
         for col in ["outbound_date", "return_date"]:
