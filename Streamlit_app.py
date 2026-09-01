@@ -55,6 +55,7 @@ supabase = get_supabase()
 tab_regs, tab_flights, tab_courses = st.tabs(
     ["Registrations", "Standard Flight Options", "Default Course Dates"]
 )
+
 with tab_flights:
     st.subheader("Add a standard flight option")
     fo_out = st.date_input("Flight Out Date")
@@ -82,19 +83,11 @@ with tab_flights:
     try:
         flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
     except Exception as e:
-        st.error("Could not load flight options. Check that the flight_options table exists and RLS allows select.")
+        st.error("Could not load flight options.")
         st.caption(str(e))
         flights = []
 
-    try:
-        flights = supabase.table("flight_options").select("*").order("outbound_date").execute().data or []
-    except Exception as e:
-        st.error("Could not load flight options. Check that the flight_options table exists and RLS allows select.")
-        st.caption(str(e))
-        flights = []    
-        
     st.subheader("Existing options")
-        
     if flights:
         view = pd.DataFrame(flights)
         for col in ["outbound_date", "return_date"]:
@@ -102,9 +95,11 @@ with tab_flights:
                 view[col] = view[col].apply(fmt_date)
         st.dataframe(view, use_container_width=True)
 
-        st.markdown("**Deactivate an option**")
-        labels = [f"{fmt_date(f.get('outbound_date'))} → {fmt_date(f.get('return_date'))} ({f.get('id')[:8]})" for f in flights]
-        choice = st.selectbox("Select option", ["-"] + labels)
+        labels = [
+            f"{fmt_date(f.get('outbound_date'))} → {fmt_date(f.get('return_date'))} ({str(f.get('id'))[:8]})"
+            for f in flights
+        ]
+        choice = st.selectbox("Deactivate an option", ["-"] + labels, key="flight_deactivate")
         if choice != "-" and st.button("Deactivate selected option"):
             selected = flights[labels.index(choice)]
             supabase.table("flight_options").update({"is_active": False}).eq("id", selected["id"]).execute()
@@ -113,19 +108,20 @@ with tab_flights:
     else:
         st.info("No standard flight options yet. Add one above.")
 
+with tab_courses:
     st.subheader("Add a default course date")
     st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
 
-    cd_label = st.text_input("Label (optional)", key="cd_label")
-    cd_start = st.date_input("Course Start Date", key="cd_start")
-    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="cd_weeks")
+    cd_label = st.text_input("Label (optional)", key="course_date_label")
+    cd_start = st.date_input("Course Start Date", key="course_date_start")
+    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="course_date_weeks")
 
     calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
 
     cd_end = st.date_input(
         "Course End Date (overridable)",
         value=calculated_end,
-        key=f"cd_end_{cd_start}_{int(cd_weeks)}"
+        key=f"course_date_end_{cd_start}_{int(cd_weeks)}"
     )
     st.caption(f"Calculated Saturday: {calculated_end.strftime('%d-%b-%Y')}")
 
@@ -163,61 +159,12 @@ with tab_flights:
             f"{fmt_date(c.get('start_date'))} → {fmt_date(c.get('end_date'))} ({c.get('duration_weeks')} wks)"
             for c in course_dates
         ]
-        choice = st.selectbox("Deactivate an option", ["-"] + labels, key="cd_deactivate")
+        choice = st.selectbox("Deactivate an option", ["-"] + labels, key="course_deactivate")
         if choice != "-" and st.button("Deactivate selected course date"):
             selected = course_dates[labels.index(choice)]
             supabase.table("course_date_options").update({"is_active": False}).eq("id", selected["id"]).execute()
             st.success("Course date option deactivated")
             st.rerun()
-    else:
-        st.info("No default course dates yet. Add one above.")
-
-with tab_courses:
-    st.subheader("Add a default course date")
-    st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
-
-    cd_label = st.text_input("Label (optional)", key="cd_label")
-    cd_start = st.date_input("Course Start Date", key="cd_start")
-    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="cd_weeks")
-
-    calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
-
-    cd_end = st.date_input(
-        "Course End Date (overridable)",
-        value=calculated_end,
-        key=f"cd_end_{cd_start}_{int(cd_weeks)}"
-    )
-    st.caption(f"Calculated Saturday: {calculated_end.strftime('%d-%b-%Y')}")
-
-    if st.button("Save course date option"):
-        try:
-            supabase.table("course_date_options").insert({
-                "label": cd_label.strip() or None,
-                "start_date": cd_start.isoformat(),
-                "duration_weeks": int(cd_weeks),
-                "end_date": cd_end.isoformat(),
-                "is_active": True,
-            }).execute()
-            st.success("Course date option saved")
-            st.rerun()
-        except Exception as e:
-            st.error("Could not save course date option.")
-            st.caption(str(e))
-
-    try:
-        course_dates = supabase.table("course_date_options").select("*").order("start_date").execute().data or []
-    except Exception as e:
-        st.error("Could not load course date options.")
-        st.caption(str(e))
-        course_dates = []
-
-    st.subheader("Existing course dates")
-    if course_dates:
-        view = pd.DataFrame(course_dates)
-        for col in ["start_date", "end_date"]:
-            if col in view.columns:
-                view[col] = view[col].apply(fmt_date)
-        st.dataframe(view, use_container_width=True)
     else:
         st.info("No default course dates yet. Add one above.")
 
