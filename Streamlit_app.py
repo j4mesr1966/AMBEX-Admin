@@ -16,16 +16,17 @@ st.set_page_config(
 st.title("Daddy English Administration")
 st.caption("Mobile-friendly registration admin")
 
+
 def get_app_password():
     try:
         return st.secrets["APP_PASSWORD"]
     except Exception:
         return "Matthew"
 
+
 def check_password():
     if st.session_state.get("password_ok"):
         return True
-
     st.text_input("Password", type="password", key="admin_password")
     if st.button("Log in"):
         if st.session_state.get("admin_password") == get_app_password():
@@ -34,6 +35,7 @@ def check_password():
         else:
             st.error("Incorrect password")
     return False
+
 
 if not check_password():
     st.stop()
@@ -49,6 +51,10 @@ FEEDBACK_FIELDS = [
     ("feedback_meals_dietary", "Meals meeting personal/dietary needs"),
     ("feedback_safety_convenience", "Safety and convenience of accommodation"),
 ]
+TRANSPORT_OPTIONS = ["Coach", "Mini Bus", "Train", "Taxi"]
+TRIP_TYPES = ["Anglo", "AMBEX"]
+STATUS_OPTIONS = ["Offered", "Confirmed"]
+DEPOSIT_STATUS_OPTIONS = ["Unpaid", "Paid"]
 
 
 def safe(value):
@@ -65,6 +71,16 @@ def fmt_date(value):
         return datetime.strptime(text, "%Y-%m-%d").strftime("%d-%b-%Y")
     except Exception:
         return text
+
+
+def parse_iso_date(value):
+    text = safe(value)[:10]
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except Exception:
+        return None
 
 
 @st.cache_resource
@@ -99,7 +115,7 @@ with tab_flights:
             st.success("Flight option saved")
             st.rerun()
         except Exception as e:
-            st.error("Could not save flight option. Check that the flight_options table exists.")
+            st.error("Could not save flight option.")
             st.caption(str(e))
 
     try:
@@ -116,7 +132,6 @@ with tab_flights:
             if col in view.columns:
                 view[col] = view[col].apply(fmt_date)
         st.dataframe(view, use_container_width=True)
-
         labels = [
             f"{fmt_date(f.get('outbound_date'))} → {fmt_date(f.get('return_date'))} ({str(f.get('id'))[:8]})"
             for f in flights
@@ -137,9 +152,7 @@ with tab_courses:
     cd_label = st.text_input("Group Name", key="course_date_label")
     cd_start = st.date_input("Course Start Date", key="course_date_start")
     cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="course_date_weeks")
-
     calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
-
     cd_end = st.date_input(
         "Course End Date (overridable)",
         value=calculated_end,
@@ -159,7 +172,7 @@ with tab_courses:
             st.success("Course date option saved")
             st.rerun()
         except Exception as e:
-            st.error("Could not save course date option. Check that course_date_options exists.")
+            st.error("Could not save course date option.")
             st.caption(str(e))
 
     try:
@@ -176,7 +189,6 @@ with tab_courses:
             if col in view.columns:
                 view[col] = view[col].apply(fmt_date)
         st.dataframe(view, use_container_width=True)
-
         labels = [
             f"{fmt_date(c.get('start_date'))} → {fmt_date(c.get('end_date'))} ({c.get('duration_weeks')} wks)"
             for c in course_dates
@@ -192,12 +204,7 @@ with tab_courses:
 
 with tab_trips:
     st.subheader("Setup Trips")
-    st.caption("Weekend trips are Saturday and Sunday. You can generate them from course dates and also add extra trips before or after.")
-
-    TRANSPORT_OPTIONS = ["Coach", "Mini Bus", "Train", "Taxi"]
-    TRIP_TYPES = ["Anglo", "AMBEX"]
-    STATUS_OPTIONS = ["Offered", "Confirmed"]
-    DEPOSIT_STATUS_OPTIONS = ["Unpaid", "Paid"]
+    st.caption("Generate creates Anglo trips on Saturdays and AMBEX trips on Sundays. You can still add either type on either day manually.")
 
     try:
         active_courses = supabase.table("course_date_options").select("*").eq("is_active", True).order("start_date").execute().data or []
@@ -209,12 +216,9 @@ with tab_trips:
     def overlapping_courses(trip_date):
         matches = []
         for c in active_courses:
-            try:
-                start = datetime.strptime(str(c.get("start_date"))[:10], "%Y-%m-%d").date()
-                end = datetime.strptime(str(c.get("end_date"))[:10], "%Y-%m-%d").date()
-            except Exception:
-                continue
-            if start <= trip_date <= end:
+            start = parse_iso_date(c.get("start_date"))
+            end = parse_iso_date(c.get("end_date"))
+            if start and end and start <= trip_date <= end:
                 matches.append(c)
         return matches
 
@@ -230,11 +234,10 @@ with tab_trips:
         try:
             existing = supabase.table("trips").select("trip_date,trip_type").execute().data or []
             existing_keys = {(str(r.get("trip_date"))[:10], r.get("trip_type")) for r in existing}
-
             all_dates = set()
             if active_courses:
-                min_start = min(datetime.strptime(str(c["start_date"])[:10], "%Y-%m-%d").date() for c in active_courses)
-                max_end = max(datetime.strptime(str(c["end_date"])[:10], "%Y-%m-%d").date() for c in active_courses)
+                min_start = min(parse_iso_date(c["start_date"]) for c in active_courses if parse_iso_date(c.get("start_date")))
+                max_end = max(parse_iso_date(c["end_date"]) for c in active_courses if parse_iso_date(c.get("end_date")))
                 window_start = min_start - timedelta(weeks=int(extra_before))
                 window_end = max_end + timedelta(weeks=int(extra_after))
                 d = window_start
@@ -272,34 +275,32 @@ with tab_trips:
                             "course_date_option_id": c["id"],
                         }).execute()
                     created += 1
+            st.success(f"Created {created} trip row(s)")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not generate trips.")
+            st.caption(str(e))
 
     st.markdown("### Add a trip")
     new_date = st.date_input("Date", key="new_trip_date")
     st.caption(new_date.strftime("%d-%b-%Y"))
     new_day = "Saturday" if new_date.weekday() == 5 else "Sunday" if new_date.weekday() == 6 else new_date.strftime("%A")
     st.write(f"Day: **{new_day}**")
-
     new_type = st.selectbox("Trip Type", TRIP_TYPES, key="new_trip_type")
     new_desc = st.text_input("Description", key="new_trip_desc")
-
     default_transport = "Coach" if new_type == "Anglo" else TRANSPORT_OPTIONS[0]
     transport_choice = st.selectbox(
         "Transportation",
         TRANSPORT_OPTIONS,
-        index=TRANSPORT_OPTIONS.index(default_transport) if default_transport in TRANSPORT_OPTIONS else 0,
+        index=TRANSPORT_OPTIONS.index(default_transport),
         key=f"new_trip_transport_{new_type}"
     )
     transport_custom = st.text_input("Or type a different transportation", key="new_trip_transport_custom")
     new_transport = transport_custom.strip() or transport_choice
 
-    ambex_status = None
-    ambex_offer = None
-    ambex_ref = None
-    ambex_cost_plus = None
-    ambex_cost_under = None
-    deposit_status = None
-    deposit_amount = None
-    deposit_due = None
+    ambex_status = ambex_offer = ambex_ref = None
+    ambex_cost_plus = ambex_cost_under = None
+    deposit_status = deposit_amount = deposit_due = None
     selected_group_ids = []
 
     if new_type == "AMBEX":
@@ -309,12 +310,12 @@ with tab_trips:
         group_options = overlapping_courses(new_date) or active_courses
         group_labels = {group_label(c): c["id"] for c in group_options}
         selected_labels = st.multiselect(
-            "Group Name (overlapping course groups are listed first)",
+            "Group Name",
             options=list(group_labels.keys()),
             default=[group_label(c) for c in overlapping_courses(new_date)],
             key="new_trip_groups"
         )
-        selected_group_ids = [group_labels[l] for l in selected_labels]
+        selected_group_ids = [group_labels[l] for l in selected_labels if l in group_labels]
         ambex_ref = st.text_input("Booking Reference", key="new_trip_ref")
         ambex_cost_plus = st.number_input("Cost for 15+", min_value=0.0, step=1.0, key="new_trip_cost_plus")
         ambex_cost_under = st.number_input("Cost for under 15", min_value=0.0, step=1.0, key="new_trip_cost_under")
@@ -353,7 +354,7 @@ with tab_trips:
             st.error("Could not save trip.")
             st.caption(str(e))
 
-        st.markdown("### Existing trips")
+    st.markdown("### Existing trips")
     try:
         trips = supabase.table("trips").select("*").order("trip_date").execute().data or []
     except Exception as e:
@@ -374,12 +375,10 @@ with tab_trips:
             if col not in view.columns:
                 view[col] = None
         view = view[display_cols]
-        view["trip_date_fmt"] = view["trip_date"].apply(fmt_date)
-        view["deposit_date_due_fmt"] = view["deposit_date_due"].apply(fmt_date)
 
         st.caption("Edit cells in the table, then click Save table changes. Id is on the far right.")
         edited = st.data_editor(
-            view.drop(columns=["trip_date_fmt", "deposit_date_due_fmt"]),
+            view,
             use_container_width=True,
             hide_index=True,
             column_config={
@@ -387,9 +386,7 @@ with tab_trips:
                 "trip_date": st.column_config.TextColumn("Date"),
                 "day_name": st.column_config.TextColumn("Day"),
                 "trip_type": st.column_config.SelectboxColumn("Trip Type", options=["Anglo", "AMBEX"]),
-                "transportation": st.column_config.SelectboxColumn(
-                    "Transportation", options=["Coach", "Mini Bus", "Train", "Taxi"]
-                ),
+                "transportation": st.column_config.SelectboxColumn("Transportation", options=TRANSPORT_OPTIONS),
                 "status": st.column_config.SelectboxColumn("Status", options=["", "Offered", "Confirmed"]),
                 "deposit_status": st.column_config.SelectboxColumn("Deposit Status", options=["", "Unpaid", "Paid"]),
                 "is_active": st.column_config.CheckboxColumn("Active"),
@@ -433,29 +430,26 @@ with tab_trips:
         if picked != "-":
             t = trips[trip_labels.index(picked)]
             st.text_input("Id", value=str(t.get("id")), disabled=True, key="edit_trip_id")
-            edit_date = st.date_input(
-                "Date",
-                value=datetime.strptime(str(t.get("trip_date"))[:10], "%Y-%m-%d").date(),
-                key="edit_trip_date"
-            )
+            current_date = parse_iso_date(t.get("trip_date")) or date_cls.today()
+            edit_date = st.date_input("Date", value=current_date, key="edit_trip_date")
             st.caption(edit_date.strftime("%d-%b-%Y"))
             edit_day = "Saturday" if edit_date.weekday() == 5 else "Sunday" if edit_date.weekday() == 6 else edit_date.strftime("%A")
             st.write(f"Day: **{edit_day}**")
             edit_type = st.selectbox(
                 "Trip Type",
-                ["Anglo", "AMBEX"],
+                TRIP_TYPES,
                 index=0 if t.get("trip_type") == "Anglo" else 1,
                 key="edit_trip_type"
             )
             edit_desc = st.text_input("Description", value=safe(t.get("description")), key="edit_trip_desc")
-            current_transport = safe(t.get("transportation")) or ("Coach" if edit_type == "Anglo" else "Coach")
-            transport_opts = ["Coach", "Mini Bus", "Train", "Taxi"]
+            current_transport = safe(t.get("transportation")) or "Coach"
+            transport_opts = TRANSPORT_OPTIONS[:]
             if current_transport not in transport_opts:
                 transport_opts = [current_transport] + transport_opts
             edit_transport = st.selectbox(
                 "Transportation",
                 transport_opts,
-                index=transport_opts.index(current_transport) if current_transport in transport_opts else 0,
+                index=transport_opts.index(current_transport),
                 key="edit_trip_transport"
             )
             edit_transport_custom = st.text_input("Or type a different transportation", key="edit_trip_transport_custom")
@@ -466,31 +460,25 @@ with tab_trips:
             edit_dep_status = edit_dep_amount = edit_dep_due = None
             if edit_type == "AMBEX":
                 st.markdown("**AMBEX details**")
-                status_opts = ["Offered", "Confirmed"]
                 edit_status = st.selectbox(
                     "Status",
-                    status_opts,
-                    index=status_opts.index(t.get("status")) if t.get("status") in status_opts else 0,
+                    STATUS_OPTIONS,
+                    index=STATUS_OPTIONS.index(t.get("status")) if t.get("status") in STATUS_OPTIONS else 0,
                     key="edit_trip_status"
                 )
                 edit_offer = st.text_input("Offer From", value=safe(t.get("offer_from")), key="edit_trip_offer")
                 edit_ref = st.text_input("Booking Reference", value=safe(t.get("booking_reference")), key="edit_trip_ref")
                 edit_cost_plus = st.number_input("Cost for 15+", value=float(t.get("cost_15_plus") or 0), key="edit_trip_cost_plus")
                 edit_cost_under = st.number_input("Cost for under 15", value=float(t.get("cost_under_15") or 0), key="edit_trip_cost_under")
-                dep_opts = ["Unpaid", "Paid"]
                 edit_dep_status = st.selectbox(
                     "Deposit Status",
-                    dep_opts,
-                    index=dep_opts.index(t.get("deposit_status")) if t.get("deposit_status") in dep_opts else 0,
+                    DEPOSIT_STATUS_OPTIONS,
+                    index=DEPOSIT_STATUS_OPTIONS.index(t.get("deposit_status")) if t.get("deposit_status") in DEPOSIT_STATUS_OPTIONS else 0,
                     key="edit_trip_dep_status"
                 )
                 edit_dep_amount = st.number_input("Deposit Amount", value=float(t.get("deposit_amount") or 0), key="edit_trip_dep_amount")
-                due_val = t.get("deposit_date_due")
-                edit_dep_due = st.date_input(
-                    "Deposit Date Due",
-                    value=datetime.strptime(str(due_val)[:10], "%Y-%m-%d").date() if due_val else edit_date,
-                    key="edit_trip_dep_due"
-                )
+                due_val = parse_iso_date(t.get("deposit_date_due")) or edit_date
+                edit_dep_due = st.date_input("Deposit Date Due", value=due_val, key="edit_trip_dep_due")
                 st.caption(edit_dep_due.strftime("%d-%b-%Y"))
 
             if st.button("Save edit window"):
@@ -527,7 +515,6 @@ with tab_regs:
         return pd.DataFrame(data)
 
     df = load_registrations()
-
     if df.empty:
         st.info("No registrations found yet.")
     else:
@@ -581,17 +568,14 @@ with tab_regs:
                         st.markdown(f"**Course Start Date:** {fmt_date(row.get('course_start_date'))}")
                         st.markdown(f"**Course End Date:** {fmt_date(row.get('course_end_date'))}")
                         st.markdown(f"**Duration:** {safe(row.get('duration_weeks')) or '—'} weeks")
-
                     st.markdown(f"**Address:** {safe(row.get('home_address_english')) or '—'}")
                     st.markdown(f"**Allergies:** {safe(row.get('allergies')) or 'None'}")
                     st.markdown(f"**Flight out:** {fmt_date(row.get('flight_out_date'))}  |  **Return:** {fmt_date(row.get('flight_return_date'))}")
                     st.markdown(f"**Arrangement:** {safe(row.get('flight_arrangement')) or '—'}")
-
                     st.markdown("---")
                     st.markdown("**Guardian**")
                     st.markdown(f"{safe(row.get('guardian_name')) or '—'}  |  {safe(row.get('guardian_tel')) or '—'}")
                     st.markdown(f"{safe(row.get('guardian_email')) or '—'}  |  LINE: {safe(row.get('guardian_line_id')) or '—'}")
-
                     st.markdown("---")
                     st.subheader("Host family")
                     host_name = st.text_input("Host family name", value=safe(row.get("host_family_name")), key=f"hn_{record_id}")
@@ -607,7 +591,6 @@ with tab_regs:
                     host_l3 = st.text_input("Address line 3", value=safe(row.get("host_address_line3")), key=f"ha3_{record_id}")
                     host_l4 = st.text_input("Address line 4", value=safe(row.get("host_address_line4")), key=f"ha4_{record_id}")
                     host_pc = st.text_input("Postcode", value=safe(row.get("host_postcode")), key=f"hpc_{record_id}")
-
                     st.markdown("---")
                     st.subheader("Student feedback")
                     feedback_values = {}
@@ -619,7 +602,6 @@ with tab_regs:
                             key=f"{field_key}_{record_id}"
                         )
                     feedback_comments = st.text_area("Comments", value=safe(row.get("feedback_comments")), key=f"fc_{record_id}")
-
                     current_status = safe(row.get("status")) or "Draft"
                     status_choices = ["Draft", "Submitted", "Confirmed", "Cancelled"]
                     new_status = st.selectbox(
@@ -627,7 +609,6 @@ with tab_regs:
                         index=status_choices.index(current_status) if current_status in status_choices else 0,
                         key=f"status_{record_id}"
                     )
-
                     if st.button("Save host family, feedback & status", key=f"save_{record_id}", use_container_width=True):
                         payload = {
                             "host_family_name": host_name.strip() or None,
