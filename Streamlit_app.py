@@ -16,6 +16,28 @@ st.set_page_config(
 st.title("Daddy English Administration")
 st.caption("Mobile-friendly registration admin")
 
+def get_app_password():
+    try:
+        return st.secrets["APP_PASSWORD"]
+    except Exception:
+        return "Matthew"
+
+def check_password():
+    if st.session_state.get("password_ok"):
+        return True
+
+    st.text_input("Password", type="password", key="admin_password")
+    if st.button("Log in"):
+        if st.session_state.get("admin_password") == get_app_password():
+            st.session_state["password_ok"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password")
+    return False
+
+if not check_password():
+    st.stop()
+
 RATING_OPTIONS = ["", "Very Satisfied", "Satisfied", "Neutral", "Dissatisfied", "Very Dissatisfied"]
 PHONE_TYPES = ["", "Mobile", "Home", "WhatsApp", "LINE"]
 FEEDBACK_FIELDS = [
