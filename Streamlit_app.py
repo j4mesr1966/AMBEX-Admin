@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
-from datetime import datetime, date as date_cls
+from datetime import datetime, date as date_cls, timedelta
 
 SUPABASE_URL = "https://bwhkccfwzsvjtsaqvhyy.supabase.co"
 SUPABASE_KEY = "sb_publishable_LdjLR-FIesLKwuqtQzHDpg_C-OIdGgg"
@@ -74,8 +74,8 @@ def get_supabase() -> Client:
 
 supabase = get_supabase()
 
-tab_regs, tab_flights, tab_courses = st.tabs(
-    ["Update Registrations", "Setup Flights", "Setup Courses"]
+tab_regs, tab_flights, tab_courses, tab_trips = st.tabs(
+    ["Update & Amend Registrations", "Setup Flights", "Setup Courses", "Setup Trips"]
 )
 
 with tab_flights:
@@ -130,65 +130,185 @@ with tab_flights:
     else:
         st.info("No standard flight options yet. Add one above.")
 
-with tab_courses:
-    st.subheader("Add a default course date")
-    st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
+with tab_trips:
+    st.subheader("Setup Trips")
+    st.caption("Weekend trips are Saturday and Sunday. You can generate them from course dates and also add extra trips before or after.")
 
-    cd_label = st.text_input("Group Name", key="course_date_label")
-    cd_start = st.date_input("Course Start Date", key="course_date_start")
-    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="course_date_weeks")
-
-    calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
-
-    cd_end = st.date_input(
-        "Course End Date (overridable)",
-        value=calculated_end,
-        key=f"course_date_end_{cd_start}_{int(cd_weeks)}"
-    )
-    st.caption(f"Calculated Saturday: {calculated_end.strftime('%d-%b-%Y')}")
-
-    if st.button("Save course date option"):
-        try:
-            supabase.table("course_date_options").insert({
-                "label": cd_label.strip() or None,
-                "start_date": cd_start.isoformat(),
-                "duration_weeks": int(cd_weeks),
-                "end_date": cd_end.isoformat(),
-                "is_active": True,
-            }).execute()
-            st.success("Course date option saved")
-            st.rerun()
-        except Exception as e:
-            st.error("Could not save course date option. Check that course_date_options exists.")
-            st.caption(str(e))
+    TRANSPORT_OPTIONS = ["Coach", "Mini Bus", "Train", "Taxi"]
+    TRIP_TYPES = ["Anglo", "AMBEX"]
+    STATUS_OPTIONS = ["Offered", "Confirmed"]
+    DEPOSIT_STATUS_OPTIONS = ["Unpaid", "Paid"]
 
     try:
-        course_dates = supabase.table("course_date_options").select("*").order("start_date").execute().data or []
+        active_courses = supabase.table("course_date_options").select("*").eq("is_active", True).order("start_date").execute().data or []
     except Exception as e:
-        st.error("Could not load course date options.")
+        st.error("Could not load course groups.")
         st.caption(str(e))
-        course_dates = []
+        active_courses = []
 
-    st.subheader("Existing course dates")
-    if course_dates:
-        view = pd.DataFrame(course_dates)
-        for col in ["start_date", "end_date"]:
-            if col in view.columns:
-                view[col] = view[col].apply(fmt_date)
-        st.dataframe(view, use_container_width=True)
+    def overlapping_courses(trip_date):
+        matches = []
+        for c in active_courses:
+            try:
+                start = datetime.strptime(str(c.get("start_date"))[:10], "%Y-%m-%d").date()
+                end = datetime.strptime(str(c.get("end_date"))[:10], "%Y-%m-%d").date()
+            except Exception:
+                continue
+            if start <= trip_date <= end:
+                matches.append(c)
+        return matches
 
-        labels = [
-            f"{fmt_date(c.get('start_date'))} → {fmt_date(c.get('end_date'))} ({c.get('duration_weeks')} wks)"
-            for c in course_dates
-        ]
-        choice = st.selectbox("Deactivate an option", ["-"] + labels, key="course_deactivate")
-        if choice != "-" and st.button("Deactivate selected course date"):
-            selected = course_dates[labels.index(choice)]
-            supabase.table("course_date_options").update({"is_active": False}).eq("id", selected["id"]).execute()
-            st.success("Course date option deactivated")
+    def group_label(c):
+        name = c.get("label") or "Unnamed group"
+        return f"{name} ({fmt_date(c.get('start_date'))} to {fmt_date(c.get('end_date'))})"
+
+    st.markdown("### Generate weekend trips from courses")
+    extra_before = st.number_input("Extra weekends before courses", min_value=0, max_value=12, value=0, key="trip_before")
+    extra_after = st.number_input("Extra weekends after courses", min_value=0, max_value=12, value=0, key="trip_after")
+
+    if st.button("Generate Saturday & Sunday trips"):
+        try:
+            existing = supabase.table("trips").select("trip_date,trip_type").execute().data or []
+            existing_keys = {(str(r.get("trip_date"))[:10], r.get("trip_type")) for r in existing}
+
+            all_dates = set()
+            if active_courses:
+                min_start = min(datetime.strptime(str(c["start_date"])[:10], "%Y-%m-%d").date() for c in active_courses)
+                max_end = max(datetime.strptime(str(c["end_date"])[:10], "%Y-%m-%d").date() for c in active_courses)
+                window_start = min_start - timedelta(weeks=int(extra_before))
+                window_end = max_end + timedelta(weeks=int(extra_after))
+                d = window_start
+                while d <= window_end:
+                    if d.weekday() in (5, 6):
+                        all_dates.add(d)
+                    d += timedelta(days=1)
+
+            created = 0
+            for trip_date in sorted(all_dates):
+                day_name = "Saturday" if trip_date.weekday() == 5 else "Sunday"
+                for trip_type in TRIP_TYPES:
+                    key = (trip_date.isoformat(), trip_type)
+                    if key in existing_keys:
+                        continue
+                    transport = "Coach" if trip_type == "Anglo" else None
+                    inserted = supabase.table("trips").insert({
+                        "trip_date": trip_date.isoformat(),
+                        "day_name": day_name,
+                        "trip_type": trip_type,
+                        "transportation": transport,
+                        "is_active": True,
+                    }).execute().data
+                    if inserted:
+                        trip_id = inserted[0]["id"]
+                        for c in overlapping_courses(trip_date):
+                            supabase.table("trip_groups").insert({
+                                "trip_id": trip_id,
+                                "course_date_option_id": c["id"],
+                            }).execute()
+                        created += 1
+            st.success(f"Created {created} trip row(s)")
             st.rerun()
+        except Exception as e:
+            st.error("Could not generate trips.")
+            st.caption(str(e))
+
+    st.markdown("### Add a trip")
+    new_date = st.date_input("Date", key="new_trip_date")
+    st.caption(new_date.strftime("%d-%b-%Y"))
+    new_day = "Saturday" if new_date.weekday() == 5 else "Sunday" if new_date.weekday() == 6 else new_date.strftime("%A")
+    st.write(f"Day: **{new_day}**")
+
+    new_type = st.selectbox("Trip Type", TRIP_TYPES, key="new_trip_type")
+    new_desc = st.text_input("Description", key="new_trip_desc")
+
+    default_transport = "Coach" if new_type == "Anglo" else TRANSPORT_OPTIONS[0]
+    transport_choice = st.selectbox(
+        "Transportation",
+        TRANSPORT_OPTIONS,
+        index=TRANSPORT_OPTIONS.index(default_transport) if default_transport in TRANSPORT_OPTIONS else 0,
+        key=f"new_trip_transport_{new_type}"
+    )
+    transport_custom = st.text_input("Or type a different transportation", key="new_trip_transport_custom")
+    new_transport = transport_custom.strip() or transport_choice
+
+    ambex_status = None
+    ambex_offer = None
+    ambex_ref = None
+    ambex_cost_plus = None
+    ambex_cost_under = None
+    deposit_status = None
+    deposit_amount = None
+    deposit_due = None
+    selected_group_ids = []
+
+    if new_type == "AMBEX":
+        st.markdown("**AMBEX details**")
+        ambex_status = st.selectbox("Status", STATUS_OPTIONS, key="new_trip_status")
+        ambex_offer = st.text_input("Offer From", key="new_trip_offer")
+        group_options = overlapping_courses(new_date) or active_courses
+        group_labels = {group_label(c): c["id"] for c in group_options}
+        selected_labels = st.multiselect(
+            "Group Name (overlapping course groups are listed first)",
+            options=list(group_labels.keys()),
+            default=[group_label(c) for c in overlapping_courses(new_date)],
+            key="new_trip_groups"
+        )
+        selected_group_ids = [group_labels[l] for l in selected_labels]
+        ambex_ref = st.text_input("Booking Reference", key="new_trip_ref")
+        ambex_cost_plus = st.number_input("Cost for 15+", min_value=0.0, step=1.0, key="new_trip_cost_plus")
+        ambex_cost_under = st.number_input("Cost for under 15", min_value=0.0, step=1.0, key="new_trip_cost_under")
+        deposit_status = st.selectbox("Deposit Status", DEPOSIT_STATUS_OPTIONS, key="new_trip_deposit_status")
+        deposit_amount = st.number_input("Deposit Amount", min_value=0.0, step=1.0, key="new_trip_deposit_amount")
+        deposit_due = st.date_input("Deposit Date Due", key="new_trip_deposit_due")
+        st.caption(deposit_due.strftime("%d-%b-%Y"))
+
+    if st.button("Save trip"):
+        try:
+            inserted = supabase.table("trips").insert({
+                "trip_date": new_date.isoformat(),
+                "day_name": new_day,
+                "trip_type": new_type,
+                "description": new_desc.strip() or None,
+                "transportation": new_transport,
+                "status": ambex_status if new_type == "AMBEX" else None,
+                "offer_from": ambex_offer.strip() if ambex_offer else None,
+                "booking_reference": ambex_ref.strip() if ambex_ref else None,
+                "cost_15_plus": ambex_cost_plus if new_type == "AMBEX" else None,
+                "cost_under_15": ambex_cost_under if new_type == "AMBEX" else None,
+                "deposit_status": deposit_status if new_type == "AMBEX" else None,
+                "deposit_amount": deposit_amount if new_type == "AMBEX" else None,
+                "deposit_date_due": deposit_due.isoformat() if new_type == "AMBEX" and deposit_due else None,
+                "is_active": True,
+            }).execute().data
+            if inserted and selected_group_ids:
+                for gid in selected_group_ids:
+                    supabase.table("trip_groups").insert({
+                        "trip_id": inserted[0]["id"],
+                        "course_date_option_id": gid,
+                    }).execute()
+            st.success("Trip saved")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not save trip.")
+            st.caption(str(e))
+
+    st.markdown("### Existing trips")
+    try:
+        trips = supabase.table("trips").select("*").order("trip_date").execute().data or []
+    except Exception as e:
+        st.error("Could not load trips.")
+        st.caption(str(e))
+        trips = []
+
+    if trips:
+        view = pd.DataFrame(trips)
+        if "trip_date" in view.columns:
+            view["trip_date"] = view["trip_date"].apply(fmt_date)
+        if "deposit_date_due" in view.columns:
+            view["deposit_date_due"] = view["deposit_date_due"].apply(fmt_date)
+        st.dataframe(view, use_container_width=True)
     else:
-        st.info("No default course dates yet. Add one above.")
+        st.info("No trips yet. Generate weekends or add one above.")
 
 with tab_regs:
     @st.cache_data(ttl=30)
