@@ -244,33 +244,34 @@ with tab_trips:
                     d += timedelta(days=1)
 
             created = 0
-            for trip_date in sorted(all_dates):
-                day_name = "Saturday" if trip_date.weekday() == 5 else "Sunday"
-                for trip_type in TRIP_TYPES:
-                    key = (trip_date.isoformat(), trip_type)
-                    if key in existing_keys:
-                        continue
-                    transport = "Coach" if trip_type == "Anglo" else None
-                    inserted = supabase.table("trips").insert({
-                        "trip_date": trip_date.isoformat(),
-                        "day_name": day_name,
-                        "trip_type": trip_type,
-                        "transportation": transport,
-                        "is_active": True,
-                    }).execute().data
-                    if inserted:
-                        trip_id = inserted[0]["id"]
-                        for c in overlapping_courses(trip_date):
-                            supabase.table("trip_groups").insert({
-                                "trip_id": trip_id,
-                                "course_date_option_id": c["id"],
-                            }).execute()
-                        created += 1
-            st.success(f"Created {created} trip row(s)")
-            st.rerun()
-        except Exception as e:
-            st.error("Could not generate trips.")
-            st.caption(str(e))
+                        for trip_date in sorted(all_dates):
+                if trip_date.weekday() == 5:
+                    day_name = "Saturday"
+                    trip_type = "Anglo"
+                else:
+                    day_name = "Sunday"
+                    trip_type = "AMBEX"
+
+                key = (trip_date.isoformat(), trip_type)
+                if key in existing_keys:
+                    continue
+
+                transport = "Coach" if trip_type == "Anglo" else None
+                inserted = supabase.table("trips").insert({
+                    "trip_date": trip_date.isoformat(),
+                    "day_name": day_name,
+                    "trip_type": trip_type,
+                    "transportation": transport,
+                    "is_active": True,
+                }).execute().data
+                if inserted:
+                    trip_id = inserted[0]["id"]
+                    for c in overlapping_courses(trip_date):
+                        supabase.table("trip_groups").insert({
+                            "trip_id": trip_id,
+                            "course_date_option_id": c["id"],
+                        }).execute()
+                    created += 1
 
     st.markdown("### Add a trip")
     new_date = st.date_input("Date", key="new_trip_date")
@@ -352,7 +353,7 @@ with tab_trips:
             st.error("Could not save trip.")
             st.caption(str(e))
 
-    st.markdown("### Existing trips")
+        st.markdown("### Existing trips")
     try:
         trips = supabase.table("trips").select("*").order("trip_date").execute().data or []
     except Exception as e:
@@ -360,15 +361,161 @@ with tab_trips:
         st.caption(str(e))
         trips = []
 
-    if trips:
-        view = pd.DataFrame(trips)
-        if "trip_date" in view.columns:
-            view["trip_date"] = view["trip_date"].apply(fmt_date)
-        if "deposit_date_due" in view.columns:
-            view["deposit_date_due"] = view["deposit_date_due"].apply(fmt_date)
-        st.dataframe(view, use_container_width=True)
-    else:
+    if not trips:
         st.info("No trips yet. Generate weekends or add one above.")
+    else:
+        display_cols = [
+            "day_name", "trip_date", "trip_type", "description", "transportation",
+            "status", "offer_from", "booking_reference", "cost_15_plus", "cost_under_15",
+            "deposit_status", "deposit_amount", "deposit_date_due", "is_active", "id"
+        ]
+        view = pd.DataFrame(trips)
+        for col in display_cols:
+            if col not in view.columns:
+                view[col] = None
+        view = view[display_cols]
+        view["trip_date_fmt"] = view["trip_date"].apply(fmt_date)
+        view["deposit_date_due_fmt"] = view["deposit_date_due"].apply(fmt_date)
+
+        st.caption("Edit cells in the table, then click Save table changes. Id is on the far right.")
+        edited = st.data_editor(
+            view.drop(columns=["trip_date_fmt", "deposit_date_due_fmt"]),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.TextColumn("Id", disabled=True),
+                "trip_date": st.column_config.TextColumn("Date"),
+                "day_name": st.column_config.TextColumn("Day"),
+                "trip_type": st.column_config.SelectboxColumn("Trip Type", options=["Anglo", "AMBEX"]),
+                "transportation": st.column_config.SelectboxColumn(
+                    "Transportation", options=["Coach", "Mini Bus", "Train", "Taxi"]
+                ),
+                "status": st.column_config.SelectboxColumn("Status", options=["", "Offered", "Confirmed"]),
+                "deposit_status": st.column_config.SelectboxColumn("Deposit Status", options=["", "Unpaid", "Paid"]),
+                "is_active": st.column_config.CheckboxColumn("Active"),
+            },
+            num_rows="fixed",
+            key="trips_editor"
+        )
+
+        if st.button("Save table changes"):
+            try:
+                for _, r in edited.iterrows():
+                    supabase.table("trips").update({
+                        "day_name": r.get("day_name") or None,
+                        "trip_date": str(r.get("trip_date"))[:10] if r.get("trip_date") else None,
+                        "trip_type": r.get("trip_type") or None,
+                        "description": r.get("description") or None,
+                        "transportation": r.get("transportation") or None,
+                        "status": r.get("status") or None,
+                        "offer_from": r.get("offer_from") or None,
+                        "booking_reference": r.get("booking_reference") or None,
+                        "cost_15_plus": r.get("cost_15_plus") if pd.notna(r.get("cost_15_plus")) else None,
+                        "cost_under_15": r.get("cost_under_15") if pd.notna(r.get("cost_under_15")) else None,
+                        "deposit_status": r.get("deposit_status") or None,
+                        "deposit_amount": r.get("deposit_amount") if pd.notna(r.get("deposit_amount")) else None,
+                        "deposit_date_due": str(r.get("deposit_date_due"))[:10] if r.get("deposit_date_due") else None,
+                        "is_active": bool(r.get("is_active")),
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }).eq("id", r.get("id")).execute()
+                st.success("Table changes saved")
+                st.rerun()
+            except Exception as e:
+                st.error("Could not save table changes.")
+                st.caption(str(e))
+
+        st.markdown("### Edit window")
+        trip_labels = [
+            f"{fmt_date(t.get('trip_date'))} | {t.get('day_name')} | {t.get('trip_type')} | {str(t.get('id'))[:8]}"
+            for t in trips
+        ]
+        picked = st.selectbox("Open a trip to edit", ["-"] + trip_labels, key="trip_edit_pick")
+        if picked != "-":
+            t = trips[trip_labels.index(picked)]
+            st.text_input("Id", value=str(t.get("id")), disabled=True, key="edit_trip_id")
+            edit_date = st.date_input(
+                "Date",
+                value=datetime.strptime(str(t.get("trip_date"))[:10], "%Y-%m-%d").date(),
+                key="edit_trip_date"
+            )
+            st.caption(edit_date.strftime("%d-%b-%Y"))
+            edit_day = "Saturday" if edit_date.weekday() == 5 else "Sunday" if edit_date.weekday() == 6 else edit_date.strftime("%A")
+            st.write(f"Day: **{edit_day}**")
+            edit_type = st.selectbox(
+                "Trip Type",
+                ["Anglo", "AMBEX"],
+                index=0 if t.get("trip_type") == "Anglo" else 1,
+                key="edit_trip_type"
+            )
+            edit_desc = st.text_input("Description", value=safe(t.get("description")), key="edit_trip_desc")
+            current_transport = safe(t.get("transportation")) or ("Coach" if edit_type == "Anglo" else "Coach")
+            transport_opts = ["Coach", "Mini Bus", "Train", "Taxi"]
+            if current_transport not in transport_opts:
+                transport_opts = [current_transport] + transport_opts
+            edit_transport = st.selectbox(
+                "Transportation",
+                transport_opts,
+                index=transport_opts.index(current_transport) if current_transport in transport_opts else 0,
+                key="edit_trip_transport"
+            )
+            edit_transport_custom = st.text_input("Or type a different transportation", key="edit_trip_transport_custom")
+            edit_transport = edit_transport_custom.strip() or edit_transport
+
+            edit_status = edit_offer = edit_ref = None
+            edit_cost_plus = edit_cost_under = None
+            edit_dep_status = edit_dep_amount = edit_dep_due = None
+            if edit_type == "AMBEX":
+                st.markdown("**AMBEX details**")
+                status_opts = ["Offered", "Confirmed"]
+                edit_status = st.selectbox(
+                    "Status",
+                    status_opts,
+                    index=status_opts.index(t.get("status")) if t.get("status") in status_opts else 0,
+                    key="edit_trip_status"
+                )
+                edit_offer = st.text_input("Offer From", value=safe(t.get("offer_from")), key="edit_trip_offer")
+                edit_ref = st.text_input("Booking Reference", value=safe(t.get("booking_reference")), key="edit_trip_ref")
+                edit_cost_plus = st.number_input("Cost for 15+", value=float(t.get("cost_15_plus") or 0), key="edit_trip_cost_plus")
+                edit_cost_under = st.number_input("Cost for under 15", value=float(t.get("cost_under_15") or 0), key="edit_trip_cost_under")
+                dep_opts = ["Unpaid", "Paid"]
+                edit_dep_status = st.selectbox(
+                    "Deposit Status",
+                    dep_opts,
+                    index=dep_opts.index(t.get("deposit_status")) if t.get("deposit_status") in dep_opts else 0,
+                    key="edit_trip_dep_status"
+                )
+                edit_dep_amount = st.number_input("Deposit Amount", value=float(t.get("deposit_amount") or 0), key="edit_trip_dep_amount")
+                due_val = t.get("deposit_date_due")
+                edit_dep_due = st.date_input(
+                    "Deposit Date Due",
+                    value=datetime.strptime(str(due_val)[:10], "%Y-%m-%d").date() if due_val else edit_date,
+                    key="edit_trip_dep_due"
+                )
+                st.caption(edit_dep_due.strftime("%d-%b-%Y"))
+
+            if st.button("Save edit window"):
+                try:
+                    supabase.table("trips").update({
+                        "trip_date": edit_date.isoformat(),
+                        "day_name": edit_day,
+                        "trip_type": edit_type,
+                        "description": edit_desc.strip() or None,
+                        "transportation": edit_transport,
+                        "status": edit_status if edit_type == "AMBEX" else None,
+                        "offer_from": (edit_offer or "").strip() or None if edit_type == "AMBEX" else None,
+                        "booking_reference": (edit_ref or "").strip() or None if edit_type == "AMBEX" else None,
+                        "cost_15_plus": edit_cost_plus if edit_type == "AMBEX" else None,
+                        "cost_under_15": edit_cost_under if edit_type == "AMBEX" else None,
+                        "deposit_status": edit_dep_status if edit_type == "AMBEX" else None,
+                        "deposit_amount": edit_dep_amount if edit_type == "AMBEX" else None,
+                        "deposit_date_due": edit_dep_due.isoformat() if edit_type == "AMBEX" and edit_dep_due else None,
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }).eq("id", t.get("id")).execute()
+                    st.success("Trip updated")
+                    st.rerun()
+                except Exception as e:
+                    st.error("Could not save this trip.")
+                    st.caption(str(e))
 
 with tab_regs:
     @st.cache_data(ttl=30)
