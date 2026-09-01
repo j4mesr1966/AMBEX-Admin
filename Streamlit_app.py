@@ -113,20 +113,21 @@ with tab_flights:
     else:
         st.info("No standard flight options yet. Add one above.")
 
-with tab_courses:
     st.subheader("Add a default course date")
-    st.caption("Start date should be a Tuesday. End date is calculated as the Saturday at the end of the duration, and can be overridden.")
+    st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
 
     cd_label = st.text_input("Label (optional)", key="cd_label")
-    cd_start = st.date_input("Course Start Date (Tuesday)", key="cd_start")
+    cd_start = st.date_input("Course Start Date", key="cd_start")
     cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="cd_weeks")
 
-    calculated_end = cd_start.toordinal() + (int(cd_weeks) * 7) - 3
-    from datetime import date as date_cls
-    default_end = date_cls.fromordinal(calculated_end)
+    calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
 
-    cd_end = st.date_input("Course End Date (Saturday, overridable)", value=default_end, key="cd_end")
-    st.caption(f"Calculated Saturday: {default_end.strftime('%d-%b-%Y')}")
+    cd_end = st.date_input(
+        "Course End Date (overridable)",
+        value=calculated_end,
+        key=f"cd_end_{cd_start}_{int(cd_weeks)}"
+    )
+    st.caption(f"Calculated Saturday: {calculated_end.strftime('%d-%b-%Y')}")
 
     if st.button("Save course date option"):
         try:
