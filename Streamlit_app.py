@@ -244,7 +244,7 @@ with tab_trips:
                     d += timedelta(days=1)
 
             created = 0
-                for trip_date in sorted(all_dates):
+            for trip_date in sorted(all_dates):
                 if trip_date.weekday() == 5:
                     day_name = "Saturday"
                     trip_type = "Anglo"
