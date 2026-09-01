@@ -171,7 +171,56 @@ with tab_flights:
             st.rerun()
     else:
         st.info("No default course dates yet. Add one above.")
-        
+
+with tab_courses:
+    st.subheader("Add a default course date")
+    st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
+
+    cd_label = st.text_input("Label (optional)", key="cd_label")
+    cd_start = st.date_input("Course Start Date", key="cd_start")
+    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="cd_weeks")
+
+    calculated_end = date_cls.fromordinal(cd_start.toordinal() + (int(cd_weeks) * 7) - 3)
+
+    cd_end = st.date_input(
+        "Course End Date (overridable)",
+        value=calculated_end,
+        key=f"cd_end_{cd_start}_{int(cd_weeks)}"
+    )
+    st.caption(f"Calculated Saturday: {calculated_end.strftime('%d-%b-%Y')}")
+
+    if st.button("Save course date option"):
+        try:
+            supabase.table("course_date_options").insert({
+                "label": cd_label.strip() or None,
+                "start_date": cd_start.isoformat(),
+                "duration_weeks": int(cd_weeks),
+                "end_date": cd_end.isoformat(),
+                "is_active": True,
+            }).execute()
+            st.success("Course date option saved")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not save course date option.")
+            st.caption(str(e))
+
+    try:
+        course_dates = supabase.table("course_date_options").select("*").order("start_date").execute().data or []
+    except Exception as e:
+        st.error("Could not load course date options.")
+        st.caption(str(e))
+        course_dates = []
+
+    st.subheader("Existing course dates")
+    if course_dates:
+        view = pd.DataFrame(course_dates)
+        for col in ["start_date", "end_date"]:
+            if col in view.columns:
+                view[col] = view[col].apply(fmt_date)
+        st.dataframe(view, use_container_width=True)
+    else:
+        st.info("No default course dates yet. Add one above.")
+
 with tab_regs:
     @st.cache_data(ttl=30)
     def load_registrations():
