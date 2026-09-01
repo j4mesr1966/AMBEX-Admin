@@ -7,13 +7,13 @@ SUPABASE_URL = "https://bwhkccfwzsvjtsaqvhyy.supabase.co"
 SUPABASE_KEY = "sb_publishable_LdjLR-FIesLKwuqtQzHDpg_C-OIdGgg"
 
 st.set_page_config(
-    page_title="AMBEX Support",
+    page_title="Daddy English Administration",
     page_icon="📋",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-st.title("AMBEX Support")
+st.title("Daddy English Administration")
 st.caption("Mobile-friendly registration admin")
 
 RATING_OPTIONS = ["", "Very Satisfied", "Satisfied", "Neutral", "Dissatisfied", "Very Dissatisfied"]
@@ -53,7 +53,7 @@ def get_supabase() -> Client:
 supabase = get_supabase()
 
 tab_regs, tab_flights, tab_courses = st.tabs(
-    ["Registrations", "Standard Flight Options", "Default Course Dates"]
+    ["Update & Amend Registrations", "Setup & Amend Flights", "Setup & Amend Courses"]
 )
 
 with tab_flights:
