@@ -75,7 +75,7 @@ def get_supabase() -> Client:
 supabase = get_supabase()
 
 tab_regs, tab_flights, tab_courses = st.tabs(
-    ["Update & Amend Registrations", "Setup & Amend Flights", "Setup & Amend Courses"]
+    ["Update Registrations", "Setup Flights", "Setup Courses"]
 )
 
 with tab_flights:
@@ -134,7 +134,7 @@ with tab_courses:
     st.subheader("Add a default course date")
     st.caption("End date is calculated as the Saturday at the end of the duration, and can be overridden.")
 
-    cd_label = st.text_input("Label (optional)", key="course_date_label")
+    cd_label = st.text_input("Group Name", key="course_date_label")
     cd_start = st.date_input("Course Start Date", key="course_date_start")
     cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="course_date_weeks")
 
