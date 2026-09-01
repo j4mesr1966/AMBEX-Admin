@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, date as date_cls
 
 SUPABASE_URL = "https://bwhkccfwzsvjtsaqvhyy.supabase.co"
 SUPABASE_KEY = "sb_publishable_LdjLR-FIesLKwuqtQzHDpg_C-OIdGgg"
@@ -52,8 +52,9 @@ def get_supabase() -> Client:
 
 supabase = get_supabase()
 
-tab_regs, tab_flights = st.tabs(["Registrations", "Standard Flight Options"])
-
+tab_regs, tab_flights, tab_courses = st.tabs(
+    ["Registrations", "Standard Flight Options", "Default Course Dates"]
+)
 with tab_flights:
     st.subheader("Add a standard flight option")
     fo_out = st.date_input("Flight Out Date")
@@ -112,6 +113,64 @@ with tab_flights:
     else:
         st.info("No standard flight options yet. Add one above.")
 
+with tab_courses:
+    st.subheader("Add a default course date")
+    st.caption("Start date should be a Tuesday. End date is calculated as the Saturday at the end of the duration, and can be overridden.")
+
+    cd_label = st.text_input("Label (optional)", key="cd_label")
+    cd_start = st.date_input("Course Start Date (Tuesday)", key="cd_start")
+    cd_weeks = st.number_input("Duration (weeks)", min_value=1, max_value=12, value=4, key="cd_weeks")
+
+    calculated_end = cd_start.toordinal() + (int(cd_weeks) * 7) - 3
+    from datetime import date as date_cls
+    default_end = date_cls.fromordinal(calculated_end)
+
+    cd_end = st.date_input("Course End Date (Saturday, overridable)", value=default_end, key="cd_end")
+    st.caption(f"Calculated Saturday: {default_end.strftime('%d-%b-%Y')}")
+
+    if st.button("Save course date option"):
+        try:
+            supabase.table("course_date_options").insert({
+                "label": cd_label.strip() or None,
+                "start_date": cd_start.isoformat(),
+                "duration_weeks": int(cd_weeks),
+                "end_date": cd_end.isoformat(),
+                "is_active": True,
+            }).execute()
+            st.success("Course date option saved")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not save course date option. Check that course_date_options exists.")
+            st.caption(str(e))
+
+    try:
+        course_dates = supabase.table("course_date_options").select("*").order("start_date").execute().data or []
+    except Exception as e:
+        st.error("Could not load course date options.")
+        st.caption(str(e))
+        course_dates = []
+
+    st.subheader("Existing course dates")
+    if course_dates:
+        view = pd.DataFrame(course_dates)
+        for col in ["start_date", "end_date"]:
+            if col in view.columns:
+                view[col] = view[col].apply(fmt_date)
+        st.dataframe(view, use_container_width=True)
+
+        labels = [
+            f"{fmt_date(c.get('start_date'))} → {fmt_date(c.get('end_date'))} ({c.get('duration_weeks')} wks)"
+            for c in course_dates
+        ]
+        choice = st.selectbox("Deactivate an option", ["-"] + labels, key="cd_deactivate")
+        if choice != "-" and st.button("Deactivate selected course date"):
+            selected = course_dates[labels.index(choice)]
+            supabase.table("course_date_options").update({"is_active": False}).eq("id", selected["id"]).execute()
+            st.success("Course date option deactivated")
+            st.rerun()
+    else:
+        st.info("No default course dates yet. Add one above.")
+        
 with tab_regs:
     @st.cache_data(ttl=30)
     def load_registrations():
