@@ -90,8 +90,8 @@ def get_supabase() -> Client:
 
 supabase = get_supabase()
 
-tab_regs, tab_flights, tab_courses, tab_trips = st.tabs(
-    ["Update & Amend Registrations", "Setup Flights", "Setup Courses", "Setup Trips"]
+tab_regs, tab_flights, tab_courses, tab_trips, tab_taxis = st.tabs(
+    ["Update & Amend Registrations", "Setup Flights", "Setup Courses", "Setup Trips", "Book Taxi"]
 )
 
 with tab_flights:
@@ -504,6 +504,120 @@ with tab_trips:
                 except Exception as e:
                     st.error("Could not save this trip.")
                     st.caption(str(e))
+
+with tab_taxis:
+    SCHOOL_L1 = "Anglo-Continental School of English"
+    SCHOOL_L2 = "29-35 Wimborne Rd"
+    SCHOOL_L3 = "Bournemouth"
+    SCHOOL_PC = "BH2 6NA"
+
+    st.subheader("Book Taxi")
+
+    taxi_date = st.date_input("Date", key="taxi_date")
+    st.caption(taxi_date.strftime("%d-%b-%Y"))
+    taxi_time = st.time_input("Time", key="taxi_time")
+
+    def next_job_number():
+        stamp = datetime.now().strftime("%Y%m%d-%H%M")
+        suffix = str(datetime.now().microsecond)[-4:]
+        return f"TX-{stamp}-{suffix}"
+
+    job_number = st.text_input("Job number", value=next_job_number(), key="taxi_job")
+        taxi_status = st.selectbox(
+        "Status",
+        ["Booked", "Paid", "Invoice due", "Invoice paid"],
+        key="taxi_status"
+    )
+    main_passenger = st.text_input("Main passenger", key="taxi_main")
+    passenger_contact = st.text_input("Passenger contact number", key="taxi_pax_tel")
+    pax_count = st.number_input("Number of passengers", min_value=1, max_value=20, value=1, key="taxi_pax_count")
+
+    pickup_school = st.radio("Pickup from school", ["No", "Yes"], horizontal=True, key="taxi_pickup_school")
+    if pickup_school == "Yes":
+        pickup_l1, pickup_l2, pickup_l3, pickup_pc = SCHOOL_L1, SCHOOL_L2, SCHOOL_L3, SCHOOL_PC
+    else:
+        pickup_l1 = st.text_input("Pickup address line 1", key="taxi_pick_l1")
+        pickup_l2 = st.text_input("Pickup address line 2", key="taxi_pick_l2")
+        pickup_l3 = st.text_input("Pickup address line 3", key="taxi_pick_l3")
+        pickup_pc = st.text_input("Pickup postcode", key="taxi_pick_pc")
+
+    if pickup_school == "Yes":
+        st.text_input("Pickup address line 1", value=pickup_l1, disabled=True, key="taxi_pick_l1_disp")
+        st.text_input("Pickup address line 2", value=pickup_l2, disabled=True, key="taxi_pick_l2_disp")
+        st.text_input("Pickup address line 3", value=pickup_l3, disabled=True, key="taxi_pick_l3_disp")
+        st.text_input("Pickup postcode", value=pickup_pc, disabled=True, key="taxi_pick_pc_disp")
+
+    dropoff_school = st.radio("Dropoff to school", ["No", "Yes"], horizontal=True, key="taxi_drop_school")
+    if dropoff_school == "Yes":
+        drop_l1, drop_l2, drop_l3, drop_pc = SCHOOL_L1, SCHOOL_L2, SCHOOL_L3, SCHOOL_PC
+    else:
+        drop_l1 = st.text_input("Dropoff address line 1", key="taxi_drop_l1")
+        drop_l2 = st.text_input("Dropoff address line 2", key="taxi_drop_l2")
+        drop_l3 = st.text_input("Dropoff address line 3", key="taxi_drop_l3")
+        drop_pc = st.text_input("Dropoff postcode", key="taxi_drop_pc")
+
+    if dropoff_school == "Yes":
+        st.text_input("Dropoff address line 1", value=drop_l1, disabled=True, key="taxi_drop_l1_disp")
+        st.text_input("Dropoff address line 2", value=drop_l2, disabled=True, key="taxi_drop_l2_disp")
+        st.text_input("Dropoff address line 3", value=drop_l3, disabled=True, key="taxi_drop_l3_disp")
+        st.text_input("Dropoff postcode", value=drop_pc, disabled=True, key="taxi_drop_pc_disp")
+
+    driver_name = st.text_input("Driver name", key="taxi_driver")
+    driver_contact = st.text_input("Driver contact number", key="taxi_driver_tel")
+    cost = st.number_input("Cost", min_value=0.0, step=0.5, key="taxi_cost")
+    price_pp = st.number_input("Price per passenger", min_value=0.0, step=0.5, key="taxi_price_pp")
+    total_price = float(price_pp) * int(pax_count)
+    st.write(f"**Total Price:** £{total_price:.2f}")
+    taxi_notes = st.text_area("Notes", key="taxi_notes")
+
+    if st.button("Save taxi booking"):
+        try:
+            supabase.table("taxi_bookings").insert({
+                "job_number": job_number.strip() or next_job_number(),
+                "booking_date": taxi_date.isoformat(),
+                "booking_time": taxi_time.strftime("%H:%M"),
+                "main_passenger": main_passenger.strip() or None,
+                "passenger_contact": passenger_contact.strip() or None,
+                "number_of_passengers": int(pax_count),
+                "status": taxi_status,
+                "pickup_from_school": pickup_school == "Yes",
+                "pickup_line1": pickup_l1.strip() if pickup_l1 else None,
+                "pickup_line2": pickup_l2.strip() if pickup_l2 else None,
+                "pickup_line3": pickup_l3.strip() if pickup_l3 else None,
+                "pickup_postcode": pickup_pc.strip() if pickup_pc else None,
+                "dropoff_to_school": dropoff_school == "Yes",
+                "dropoff_line1": drop_l1.strip() if drop_l1 else None,
+                "dropoff_line2": drop_l2.strip() if drop_l2 else None,
+                "dropoff_line3": drop_l3.strip() if drop_l3 else None,
+                "dropoff_postcode": drop_pc.strip() if drop_pc else None,
+                "driver_name": driver_name.strip() or None,
+                "driver_contact": driver_contact.strip() or None,
+                "cost": cost,
+                "price_per_passenger": price_pp,
+                "total_price": total_price,
+                "notes": taxi_notes.strip() or None,
+            }).execute()
+            st.success(f"Taxi booking saved ({job_number})")
+            st.rerun()
+        except Exception as e:
+            st.error("Could not save taxi booking. Check that taxi_bookings exists.")
+            st.caption(str(e))
+
+    st.markdown("### Existing taxi bookings")
+    try:
+        bookings = supabase.table("taxi_bookings").select("*").order("booking_date", desc=True).execute().data or []
+    except Exception as e:
+        st.error("Could not load taxi bookings.")
+        st.caption(str(e))
+        bookings = []
+
+    if bookings:
+        view = pd.DataFrame(bookings)
+        if "booking_date" in view.columns:
+            view["booking_date"] = view["booking_date"].apply(fmt_date)
+        st.dataframe(view, use_container_width=True)
+    else:
+        st.info("No taxi bookings yet.")
 
 with tab_regs:
     @st.cache_data(ttl=30)
