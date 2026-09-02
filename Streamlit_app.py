@@ -523,7 +523,7 @@ with tab_taxis:
         return f"TX-{stamp}-{suffix}"
 
     job_number = st.text_input("Job number", value=next_job_number(), key="taxi_job")
-        taxi_status = st.selectbox(
+    taxi_status = st.selectbox(
         "Status",
         ["Booked", "Paid", "Invoice due", "Invoice paid"],
         key="taxi_status"
