@@ -280,13 +280,18 @@ with tab_trips:
     if not trips:
         st.info("No trips yet. Add one above.")
     else:
+        if st.button("Select all"):
+            st.session_state["trips_select_all"] = True
+            st.rerun()
+        select_all = st.session_state.pop("trips_select_all", False)
+
         rows = []
         for t in trips:
             d = parse_iso_date(t.get("trip_date"))
             day = t.get("day_name") or (d.strftime("%A") if d else "")
             flagged = "Yes" if d and d.weekday() not in (5, 6) else ""
             rows.append({
-                "Select": False,
+                "Select": select_all,
                 "Day": day,
                 "Date": fmt_date(t.get("trip_date")),
                 "Flagged": flagged,
@@ -305,7 +310,7 @@ with tab_trips:
                 "id": None,
             },
             disabled=["Day", "Date", "Flagged", "Provider", "Trip to", "Price", "id"],
-            key="trips_editor"
+            key=f"trips_editor_{editor_key}"
         )
         if st.button("Delete selected trips"):
             to_delete = edited.loc[edited["Select"] == True, "id"].tolist()
