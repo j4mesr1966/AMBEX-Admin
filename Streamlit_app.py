@@ -145,7 +145,7 @@ with tab_flights:
             num_rows="dynamic",
             key="flights_editor"
         )
-        if st.button("Save / delete flight changes"):
+        if st.button("Save flight changes"):
             try:
                 # Rows that disappeared are deleted
                 original_ids = set(view["id"].astype(str))
@@ -213,7 +213,7 @@ with tab_courses:
         for col in ["start_date", "end_date"]:
             if col in view.columns:
                 view[col] = view[col].apply(fmt_date)
-        display_cols = [c for c in view.columns if c != "id"]
+        display_cols = [c for c in view.columns if c not in ("id", "is_active")]
         st.data_editor(
             view[display_cols],
             use_container_width=True,
@@ -237,91 +237,39 @@ with tab_courses:
 
 with tab_trips:
     st.subheader("Setup Trips")
-    st.caption("Add individual trips. Transportation can be a standard option or Other.")
-
-    try:
-        active_courses = supabase.table("course_date_options").select("*").eq("is_active", True).order("start_date").execute().data or []
-    except Exception as e:
-        st.error("Could not load course groups.")
-        st.caption(str(e))
-        active_courses = []
-
-    def overlapping_courses(trip_date):
-        matches = []
-        for c in active_courses:
-            start = parse_iso_date(c.get("start_date"))
-            end = parse_iso_date(c.get("end_date"))
-            if start and end and start <= trip_date <= end:
-                matches.append(c)
-        return matches
-
-    def group_label(c):
-        name = c.get("label") or "Unnamed group"
-        return f"{name} ({fmt_date(c.get('start_date'))} to {fmt_date(c.get('end_date'))})"
+    st.caption("Add individual trips. Non-Saturday / non-Sunday dates are flagged.")
 
     st.markdown("### Add a trip")
     new_date = st.date_input("Date", key="new_trip_date")
     st.caption(new_date.strftime("%d-%b-%Y"))
     new_day = "Saturday" if new_date.weekday() == 5 else "Sunday" if new_date.weekday() == 6 else new_date.strftime("%A")
-    st.write(f"Day: **{new_day}**")
-    new_desc = st.text_input("Description", key="new_trip_desc")
+    is_weekend = new_date.weekday() in (5, 6)
+    if is_weekend:
+        st.write(f"Day: **{new_day}**")
+    else:
+        st.error(f"Flagged: {new_day} is not a Saturday or Sunday")
 
-    transport_choice = st.selectbox("Transportation", TRANSPORT_OPTIONS, key="new_trip_transport")
-    new_transport = transport_choice
-    if transport_choice == "Other":
-        transport_custom = st.text_input("Different Transportation", key="new_trip_transport_custom")
-        new_transport = transport_custom.strip() or "Other"
-
-    st.markdown("**AMBEX details**")
-    ambex_status = st.selectbox("Status", STATUS_OPTIONS, key="new_trip_status")
-    ambex_offer = st.text_input("Offer From", key="new_trip_offer")
-    group_options = overlapping_courses(new_date) or active_courses
-    group_labels = {group_label(c): c["id"] for c in group_options}
-    selected_labels = st.multiselect(
-        "Group Name",
-        options=list(group_labels.keys()),
-        default=[group_label(c) for c in overlapping_courses(new_date)],
-        key="new_trip_groups"
-    )
-    selected_group_ids = [group_labels[l] for l in selected_labels if l in group_labels]
-    ambex_ref = st.text_input("Booking Reference", key="new_trip_ref")
-    ambex_cost_plus = st.number_input("Cost for 15+", min_value=0.0, step=1.0, key="new_trip_cost_plus")
-    ambex_cost_under = st.number_input("Cost for under 15", min_value=0.0, step=1.0, key="new_trip_cost_under")
-    deposit_status = st.selectbox("Deposit Status", DEPOSIT_STATUS_OPTIONS, key="new_trip_deposit_status")
-    deposit_amount = st.number_input("Deposit Amount", min_value=0.0, step=1.0, key="new_trip_deposit_amount")
-    deposit_due = st.date_input("Deposit Date Due", key="new_trip_deposit_due")
-    st.caption(deposit_due.strftime("%d-%b-%Y"))
+    trip_provider = st.selectbox("Provider", ["Anglo", "Ambex"], key="new_trip_provider")
+    trip_to = st.text_input("Trip to", key="new_trip_to")
+    trip_price = st.number_input("Price", min_value=0.0, step=1.0, key="new_trip_price")
 
     if st.button("Save trip"):
         try:
-            inserted = supabase.table("trips").insert({
+            supabase.table("trips").insert({
                 "trip_date": new_date.isoformat(),
                 "day_name": new_day,
-                "description": new_desc.strip() or None,
-                "transportation": new_transport,
-                "status": ambex_status,
-                "offer_from": ambex_offer.strip() or None,
-                "booking_reference": ambex_ref.strip() or None,
-                "cost_15_plus": ambex_cost_plus,
-                "cost_under_15": ambex_cost_under,
-                "deposit_status": deposit_status,
-                "deposit_amount": deposit_amount,
-                "deposit_date_due": deposit_due.isoformat() if deposit_due else None,
+                "trip_type": trip_provider,
+                "description": trip_to.strip() or None,
+                "cost_15_plus": trip_price,
                 "is_active": True,
-            }).execute().data
-            if inserted and selected_group_ids:
-                for gid in selected_group_ids:
-                    supabase.table("trip_groups").insert({
-                        "trip_id": inserted[0]["id"],
-                        "course_date_option_id": gid,
-                    }).execute()
+            }).execute()
             st.success("Trip saved")
             st.rerun()
         except Exception as e:
             st.error("Could not save trip.")
             st.caption(str(e))
 
-    st.markdown("### Existing trips")
+    st.markdown("### Trips")
     try:
         trips = supabase.table("trips").select("*").order("trip_date").execute().data or []
     except Exception as e:
@@ -332,29 +280,25 @@ with tab_trips:
     if not trips:
         st.info("No trips yet. Add one above.")
     else:
-        display_cols = [
-            "day_name", "trip_date", "description", "transportation",
-            "status", "offer_from", "booking_reference", "cost_15_plus", "cost_under_15",
-            "deposit_status", "deposit_amount", "deposit_date_due", "is_active"
-        ]
-        view = pd.DataFrame(trips)
-        for col in display_cols:
-            if col not in view.columns:
-                view[col] = None
-        view = view[display_cols]
-        for col in ["trip_date", "deposit_date_due"]:
-            if col in view.columns:
-                view[col] = view[col].apply(fmt_date)
-        st.data_editor(
-            view,
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            key="trips_editor"
-        )
+        rows = []
+        for t in trips:
+            d = parse_iso_date(t.get("trip_date"))
+            day = t.get("day_name") or (d.strftime("%A") if d else "")
+            flagged = "Yes" if d and d.weekday() not in (5, 6) else ""
+            rows.append({
+                "Day": day,
+                "Date": fmt_date(t.get("trip_date")),
+                "Flagged": flagged,
+                "Provider": t.get("trip_type") or "",
+                "Trip to": t.get("description") or "",
+                "Price": t.get("cost_15_plus") or "",
+            })
+        view = pd.DataFrame(rows)
+        st.dataframe(view, use_container_width=True, hide_index=True)
+
         st.markdown("**Delete a trip**")
         trip_labels = [
-            f"{fmt_date(t.get('trip_date'))} | {t.get('day_name')} | {t.get('description') or ''} | {str(t.get('id'))[:8]}"
+            f"{fmt_date(t.get('trip_date'))} | {t.get('trip_type') or ''} | {t.get('description') or ''} | {str(t.get('id'))[:8]}"
             for t in trips
         ]
         choice = st.selectbox("Select trip to delete", ["-"] + trip_labels, key="trip_delete")
