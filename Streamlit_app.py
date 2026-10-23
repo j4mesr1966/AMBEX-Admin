@@ -282,8 +282,10 @@ with tab_trips:
     else:
         if st.button("Select all"):
             st.session_state["trips_select_all"] = True
+            st.session_state["trips_editor_key"] = st.session_state.get("trips_editor_key", 0) + 1
             st.rerun()
         select_all = st.session_state.pop("trips_select_all", False)
+        editor_key = st.session_state.get("trips_editor_key", 0)
 
         rows = []
         for t in trips:
