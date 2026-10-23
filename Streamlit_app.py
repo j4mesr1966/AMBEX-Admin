@@ -281,10 +281,10 @@ with tab_trips:
         st.info("No trips yet. Add one above.")
     else:
         if st.button("Select all"):
-            st.session_state["trips_select_all"] = True
+            st.session_state["trips_force_select"] = True
             st.session_state["trips_editor_key"] = st.session_state.get("trips_editor_key", 0) + 1
             st.rerun()
-        select_all = st.session_state.pop("trips_select_all", False)
+        force_select = st.session_state.get("trips_force_select", False)
         editor_key = st.session_state.get("trips_editor_key", 0)
 
         rows = []
@@ -293,7 +293,7 @@ with tab_trips:
             day = t.get("day_name") or (d.strftime("%A") if d else "")
             flagged = "Yes" if d and d.weekday() not in (5, 6) else ""
             rows.append({
-                "Select": select_all,
+                "Select": force_select,
                 "Day": day,
                 "Date": fmt_date(t.get("trip_date")),
                 "Flagged": flagged,
@@ -315,13 +315,18 @@ with tab_trips:
             key=f"trips_editor_{editor_key}"
         )
         if st.button("Delete selected trips"):
-            to_delete = edited.loc[edited["Select"] == True, "id"].tolist()
+            if force_select:
+                to_delete = [str(t.get("id")) for t in trips]
+            else:
+                to_delete = edited.loc[edited["Select"] == True, "id"].tolist()
             if not to_delete:
                 st.warning("Select at least one trip to delete.")
             else:
                 try:
                     for tid in to_delete:
                         supabase.table("trips").delete().eq("id", tid).execute()
+                    st.session_state["trips_force_select"] = False
+                    st.session_state["trips_editor_key"] = st.session_state.get("trips_editor_key", 0) + 1
                     st.success(f"Deleted {len(to_delete)} trip(s)")
                     st.rerun()
                 except Exception as e:
