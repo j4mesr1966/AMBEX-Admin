@@ -485,7 +485,54 @@ with tab_regs:
             filtered = filtered[filtered["status"] == status_filter]
 
         st.write(f"**{len(filtered)}** record(s) shown")
-        csv = filtered.to_csv(index=False).encode("utf-8")
+
+        def sheet_row(r):
+            nat = safe(r.get("nationality"))
+            nationality_out = "" if nat.lower() == "taiwanese" else nat
+            return {
+                "Timestamp": safe(r.get("submitted_at") or r.get("created_at") or r.get("updated_at")),
+                "Male or Female?": safe(r.get("gender")),
+                "Surname/family name of student (as on passport)": safe(r.get("surname")),
+                "First name of student (as on passport)": safe(r.get("first_name")),
+                "Nationality if NOT Taiwanese (leave blank if Taiwanese)": nationality_out,
+                "Date of Birth (day/month/year) as on passport": fmt_date(r.get("date_of_birth")),
+                "Student's age when starting their course": safe(r.get("age_at_start")),
+                "Student's age when ending their course": safe(r.get("age_at_end")),
+                "Over 18s student’s contact tel": safe(r.get("student_tel")),
+                "Over 18s student’s email": safe(r.get("student_email")),
+                "Student's passport number": safe(r.get("passport_number")),
+                "Permission to request to go out without supervision (Age group 14-16)": safe(r.get("permission_unsupervised")),
+                "Permission for Anglo to use photography/video, social media": safe(r.get("permission_anglo_media")),
+                "Course Type": safe(r.get("course_type")),
+                "If you chose Other for your course type, please specify": safe(r.get("course_other")),
+                "Course Start Date": fmt_date(r.get("course_start_date")),
+                "Course Duration (number of weeks)": safe(r.get("duration_weeks")),
+                "Does the student require a host family?": safe(r.get("requires_host_family")),
+                "Host family from date": fmt_date(r.get("host_family_from")),
+                "Host family leave date": fmt_date(r.get("host_family_leave")),
+                "Homestay pairing request": safe(r.get("homestay_pairing")),
+                "Allergies": safe(r.get("allergies")),
+                "Medical issues": safe(r.get("medical_issues")),
+                "Special dietary requirements": safe(r.get("dietary_requirements")),
+                "Prefer a host family with a pet?": safe(r.get("host_family_pet")),
+                "Learning disabilities": safe(r.get("learning_disabilities")),
+                "Medications": safe(r.get("medications")),
+                "Any other remarks": safe(r.get("notes")),
+                "First name of one parent or guardian": safe(r.get("guardian_name")),
+                "Next of kin’s contact tel": safe(r.get("guardian_tel")),
+                "Next of kin’s email": safe(r.get("guardian_email")),
+                "Next of kin's relationship to student": safe(r.get("next_of_kin_relationship")),
+                "Does next of kin speak English?": safe(r.get("guardian_speaks_english")),
+                "Permission for AMBEX to take student out": safe(r.get("permission_ambex_outing")),
+                "Contact parent's LINE name": safe(r.get("guardian_line_id")),
+                "Join the Parent and Child Program?": safe(r.get("parent_child_program")),
+                "Accompany the child but NOT join the program?": safe(r.get("accompany_not_program")),
+                "Home address (in English)": safe(r.get("home_address_english")),
+                "Notes": safe(r.get("notes")),
+            }
+
+        export_df = pd.DataFrame([sheet_row(r) for _, r in filtered.iterrows()])
+        csv = export_df.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="⬇️ Download CSV",
             data=csv,
