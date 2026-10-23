@@ -286,27 +286,40 @@ with tab_trips:
             day = t.get("day_name") or (d.strftime("%A") if d else "")
             flagged = "Yes" if d and d.weekday() not in (5, 6) else ""
             rows.append({
+                "Select": False,
                 "Day": day,
                 "Date": fmt_date(t.get("trip_date")),
                 "Flagged": flagged,
                 "Provider": t.get("trip_type") or "",
                 "Trip to": t.get("description") or "",
                 "Price": t.get("cost_15_plus") or "",
+                "id": str(t.get("id")),
             })
         view = pd.DataFrame(rows)
-        st.dataframe(view, use_container_width=True, hide_index=True)
-
-        st.markdown("**Delete a trip**")
-        trip_labels = [
-            f"{fmt_date(t.get('trip_date'))} | {t.get('trip_type') or ''} | {t.get('description') or ''} | {str(t.get('id'))[:8]}"
-            for t in trips
-        ]
-        choice = st.selectbox("Select trip to delete", ["-"] + trip_labels, key="trip_delete")
-        if choice != "-" and st.button("Delete selected trip"):
-            selected = trips[trip_labels.index(choice)]
-            supabase.table("trips").delete().eq("id", selected["id"]).execute()
-            st.success("Trip deleted")
-            st.rerun()
+        edited = st.data_editor(
+            view,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Select": st.column_config.CheckboxColumn("Select", default=False),
+                "id": None,
+            },
+            disabled=["Day", "Date", "Flagged", "Provider", "Trip to", "Price", "id"],
+            key="trips_editor"
+        )
+        if st.button("Delete selected trips"):
+            to_delete = edited.loc[edited["Select"] == True, "id"].tolist()
+            if not to_delete:
+                st.warning("Select at least one trip to delete.")
+            else:
+                try:
+                    for tid in to_delete:
+                        supabase.table("trips").delete().eq("id", tid).execute()
+                    st.success(f"Deleted {len(to_delete)} trip(s)")
+                    st.rerun()
+                except Exception as e:
+                    st.error("Could not delete trips.")
+                    st.caption(str(e))
 
 with tab_taxis:
     SCHOOL_L1 = "Anglo-Continental School of English"
