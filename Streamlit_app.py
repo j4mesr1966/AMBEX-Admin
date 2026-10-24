@@ -1,7 +1,16 @@
 import streamlit as st
 import pandas as pd
+import requests
 from supabase import create_client, Client
 from datetime import datetime, date as date_cls, timedelta
+
+SHEET_REFRESH_URL = "https://script.google.com/macros/s/AKfycbyvy4ax3fSugB4eaekhLrW4HUmKTloqzlo16Ix0K0YPV5n2XQlNOMOY1t9jHkHHlnxTEw/exec"
+
+def refresh_sheet():
+    try:
+        requests.get(SHEET_REFRESH_URL, timeout=30)
+    except Exception:
+        pass
 
 SUPABASE_URL = "https://bwhkccfwzsvjtsaqvhyy.supabase.co"
 SUPABASE_KEY = "sb_publishable_LdjLR-FIesLKwuqtQzHDpg_C-OIdGgg"
@@ -619,6 +628,7 @@ with tab_regs:
                         payload.update({k: (v or None) for k, v in feedback_values.items()})
                         try:
                             supabase.table("registrations").update(payload).eq("id", record_id).execute()
+                            refresh_sheet()
                             st.success("Saved")
                             st.cache_data.clear()
                             st.rerun()
