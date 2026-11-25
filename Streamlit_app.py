@@ -4,7 +4,7 @@ import requests
 from supabase import create_client, Client
 from datetime import datetime, date as date_cls, timedelta
 
-SHEET_REFRESH_URL = "https://script.google.com/macros/s/AKfycbyvy4ax3fSugB4eaekhLrW4HUmKTloqzlo16Ix0K0YPV5n2XQlNOMOY1t9jHkHHlnxTEw/exec"
+SHEET_REFRESH_URL = "https://script.google.com/macros/s/AKfycbypM43OfMWNS1AGY8HEdVWldb1pJQQo7BLc2zq2gg04yP-dBSj9MSsONV1Idu08GIE/exec"
 
 def refresh_sheet():
     try:
