@@ -541,12 +541,19 @@ with tab_regs:
             }
 
         export_df = pd.DataFrame([sheet_row(r) for _, r in filtered.iterrows()])
-        csv = export_df.to_csv(index=False).encode("utf-8")
+        from io import BytesIO
+        buffer = BytesIO()
+        export_df.to_excel(buffer, index=False, sheet_name="Registrations")
         st.download_button(
-            label="⬇️ Download CSV",
-            data=csv,
-            file_name=f"ambex_registrations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-            mime="text/csv",
+            label="⬇️ Download for Google Sheets",
+            data=buffer.getvalue(),
+            file_name=f"ambex_registrations_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        st.link_button(
+            "Open live Google Sheet",
+            "https://docs.google.com/spreadsheets/d/10LWS5CncfmOn_SBk6freEXE68T_T1-4YyeqLz0owU2Q/edit",
             use_container_width=True
         )
         st.divider()
