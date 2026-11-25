@@ -656,3 +656,16 @@ with tab_regs:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Update failed: {e}")
+                    if st.button("Delete this registration", key=f"del_{record_id}", use_container_width=True):
+                        st.session_state[f"confirm_del_{record_id}"] = True
+                    if st.session_state.get(f"confirm_del_{record_id}"):
+                        st.warning("This permanently deletes the registration.")
+                        if st.button("Confirm delete", key=f"yesdel_{record_id}"):
+                            try:
+                                supabase.table("registrations").delete().eq("id", record_id).execute()
+                                refresh_sheet()
+                                st.success("Deleted")
+                                st.cache_data.clear()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Delete failed: {e}")
