@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
-import requests
+try:
+    import requests
+except Exception:
+    requests = None
 from supabase import create_client, Client
 from datetime import datetime, date as date_cls, timedelta
 
 SHEET_REFRESH_URL = "https://script.google.com/macros/s/AKfycbypM43OfMWNS1AGY8HEdVWldb1pJQQo7BLc2zq2gg04yP-dBSj9MSsONV1Idu08GIE/exec"
 
 def refresh_sheet():
+    if not requests:
+        return
     try:
         requests.get(SHEET_REFRESH_URL, timeout=30)
     except Exception:
@@ -541,16 +546,26 @@ with tab_regs:
             }
 
         export_df = pd.DataFrame([sheet_row(r) for _, r in filtered.iterrows()])
-        from io import BytesIO
-        buffer = BytesIO()
-        export_df.to_excel(buffer, index=False, sheet_name="Registrations")
-        st.download_button(
-            label="⬇️ Download for Google Sheets",
-            data=buffer.getvalue(),
-            file_name=f"ambex_registrations_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+        try:
+            from io import BytesIO
+            buffer = BytesIO()
+            export_df.to_excel(buffer, index=False, sheet_name="Registrations")
+            st.download_button(
+                label="⬇️ Download for Google Sheets",
+                data=buffer.getvalue(),
+                file_name=f"ambex_registrations_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except Exception:
+            csv = export_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=csv,
+                file_name=f"ambex_registrations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
         st.link_button(
             "Open live Google Sheet",
             "https://docs.google.com/spreadsheets/d/10LWS5CncfmOn_SBk6freEXE68T_T1-4YyeqLz0owU2Q/edit",
