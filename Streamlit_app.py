@@ -662,10 +662,13 @@ with tab_regs:
                         st.warning("This permanently deletes the registration.")
                         if st.button("Confirm delete", key=f"yesdel_{record_id}"):
                             try:
-                                supabase.table("registrations").delete().eq("id", record_id).execute()
-                                refresh_sheet()
-                                st.success("Deleted")
-                                st.cache_data.clear()
-                                st.rerun()
+                                result = supabase.table("registrations").delete().eq("id", record_id).execute()
+                                if not result.data:
+                                    st.error("Delete was blocked. In Supabase SQL Editor run: create policy \"allow delete\" on public.registrations for delete using (true);")
+                                else:
+                                    refresh_sheet()
+                                    st.success("Deleted")
+                                    st.cache_data.clear()
+                                    st.rerun()
                             except Exception as e:
                                 st.error(f"Delete failed: {e}")
